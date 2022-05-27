@@ -234,9 +234,12 @@ class DisableTracking extends Plugin
                     `deleted_at` IS NULL
             ';
         if (0 !== count($siteIds)) {
-            $sql .= ' AND `siteId` NOT IN (' . implode(',', $siteIds) . ')';
+            $sql .= ' AND `siteId` NOT IN (?)';
         }
-        Db::query($sql);
+        Db::query(
+            $sql,
+            implode(',', $siteIds)
+        );
 
         $sql = '
                 SELECT
