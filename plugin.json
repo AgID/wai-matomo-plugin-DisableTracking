@@ -1,7 +1,7 @@
 {
     "name":        "DisableTracking",
-    "description": "Provides the ability to disable tracking for piwik sites. So you dont grow in data but keep old data for later reporting.",
-    "version":     "1.0.4",
+    "description": "Provides the ability to disable tracking for piwik sites. So you dont grow in data but keep old data for later reporting. This is a fork for Web Analytics Italia.",
+    "version":     "1.0.5",
     "theme":       false,
     "require":     {
         "piwik": ">=3.0.0-stable,<4.0.0",
