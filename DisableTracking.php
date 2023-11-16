@@ -15,6 +15,8 @@ use Piwik\Common;
 use Piwik\Db;
 use Piwik\Piwik;
 use Piwik\Plugin;
+use Piwik\Log;
+
 
 /**
  * Disable Tracking plugin.
@@ -96,11 +98,15 @@ class DisableTracking extends Plugin
                   count(*) AS `disabled`
                 FROM ' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '
                 WHERE
-                    siteId = :siteId AND
+                    siteId = ? AND
                     deleted_at IS NULL;
             ';
-
-            $state = Db::fetchAll($sql, [':siteId' => $siteId]);
+            try {
+                $state = Db::fetchAll($sql, [$siteId]);
+            } catch (\Exception $ex) {
+                Log::error($ex->getMessage());
+                
+            }
             $isSiteTrackingDisabled = (bool) $state[0]['disabled'];
             $cache->save('DisableTracking_' . $siteId, $isSiteTrackingDisabled);
 
@@ -170,7 +176,6 @@ class DisableTracking extends Plugin
         if (!self::sitesExist($idSites)) {
             throw new \Exception('Check given site ids');
         }
-
         foreach ($idSites as $key => $idSite) {
             if ('on' === $disabled) {
                 if (!self::isSiteTrackingDisabled($idSite)) {
@@ -183,8 +188,12 @@ class DisableTracking extends Plugin
                         WHERE 
                             `deleted_at` IS NULL
                             AND
-                            `siteId` = :idSite';
-                Db::query($sql, [':idSite' => $idSite]);
+                            `siteId` = ?';
+                try {
+                    Db::query($sql, [$idSite]);
+                } catch (\Exception $ex) {
+                    Log::error($ex->getMessage()); 
+                }                           
             }
 
             $cache = Cache::getEagerCache();
@@ -210,9 +219,13 @@ class DisableTracking extends Plugin
                     INSERT INTO `' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '`
                         (siteId, created_at)
                     VALUES
-                        (:siteId, NOW())
+                        (?, NOW())
                 ';
-            Db::query($sql, [':siteId' => $id]);
+            try {
+                Db::query($sql, [$id]);
+            } catch (\Exception $ex) {
+                Log::error($ex->getMessage());                
+            }            
         }
     }
 
