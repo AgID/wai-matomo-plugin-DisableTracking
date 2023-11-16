@@ -9,7 +9,6 @@
 
 namespace Piwik\Plugins\DisableTracking;
 
-use Exception;
 use Piwik\API\Request;
 use Piwik\Cache;
 use Piwik\Common;
@@ -17,7 +16,6 @@ use Piwik\Db;
 use Piwik\Piwik;
 use Piwik\Plugin;
 use Piwik\Log;
-use Psr\Log\LoggerInterface;
 
 
 /**
@@ -103,7 +101,7 @@ class DisableTracking extends Plugin
                     siteId = ? AND
                     deleted_at IS NULL;
             ';
-            try{
+            try {
                 $state = Db::fetchAll($sql, [$siteId]);
             } catch (\Exception $ex) {
                 Log::error($ex->getMessage());
@@ -223,7 +221,7 @@ class DisableTracking extends Plugin
                     VALUES
                         (?, NOW())
                 ';
-            try{
+            try {
                 Db::query($sql, [$id]);
             } catch (\Exception $ex) {
                 Log::error($ex->getMessage());                
