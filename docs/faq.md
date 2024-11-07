@@ -1,5 +1,5 @@
 ## FAQ
 
-__Will the Plugin initially disable all site tracking?__
+__Will this plugin disable all site tracking initially?__
 
 No.

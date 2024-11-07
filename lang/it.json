@@ -1,8 +1,8 @@
 {
     "DisableSiteTracking": {
-        "FormTitle": "Panoramica stato archiviazione siti",
+        "FormTitle":         "Panoramica stato archiviazione siti",
         "SiteDisabledLabel": "Archiviato",
-        "SiteNameLabel": "Nome",
-        "SaveButtonLabel": "Salva"
+        "SiteNameLabel":     "Nome",
+        "SaveButtonLabel":   "Salva"
     }
 }

@@ -1,0 +1,8 @@
+{
+    "DisableSiteTracking": {
+        "FormTitle":         "Tracking deaktivieren - Übersicht",
+        "SiteDisabledLabel": "Deaktiviert",
+        "SiteNameLabel":     "Name",
+        "SaveButtonLabel":   "Speichern"
+    }
+}

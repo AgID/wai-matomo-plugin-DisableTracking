@@ -1,37 +1,29 @@
 {
     "name":        "DisableTracking",
-    "description": "Provides the ability to disable tracking for piwik sites. So you dont grow in data but keep old data for later reporting. This is a fork for Web Analytics Italia.",
-    "version":     "1.2.0",
+    "description": "Disable tracking for specific sites without removing the tracking code or losing the data. [WAI fork]",
+    "version":     "1.5.0",
     "theme":       false,
-    "require" : {
-        "php" : ">=5.6.0",
-        "piwik" : ">=3.0.0,<5.0.0"
+    "require":     {
+        "piwik": ">=3.0.0,<5.0.0",
+        "php":   ">=5.6.0"
     },
     "authors":     [
         {
+            "name":     "AGID",
+            "email":    "",
+            "homepage": "https://webanalytics.italia.it"
+        },
+        {
             "name":     "Lipperts WEB",
             "email":    "info@lipperts-web.de",
-            "homepage": "http://lipperts-web.de"
+            "homepage": "https://lipperts-web.de"
         }
     ],
-    "support":     {
-        "email":  "support@lipperts-web.de",
-        "issues": "",
-        "forum":  "",
-        "irc":    "",
-        "wiki":   "",
-        "source": "",
-        "docs":   "",
-        "rss":    ""
-    },
-    "homepage":    "https://lw-scm.de/lipperts-web/piwik-plugin-disabletracking",
-    "license":     "GPL v3+",
-    "keywords":    [
+    "homepage": "https://github.com/AgID/wai-matomo-plugin-DisableTracking",
+    "license":  "GPL v3+",
+    "keywords": [
         "disable",
         "tracking",
         "site"
-    ],
-    "donate": {
-        "paypal": "info@lipperts-web.de"
-    }
+    ]
 }
