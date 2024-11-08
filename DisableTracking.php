@@ -3,12 +3,12 @@
  * Piwik - free/libre analytics platform.
  *
  * @see    http://piwik.org
- *
  * @license http://www.gnu.org/licenses/gpl-3.0.html GPL v3 or later
  */
 
 namespace Piwik\Plugins\DisableTracking;
 
+use Exception;
 use Piwik\API\Request;
 use Piwik\Cache;
 use Piwik\Common;
@@ -18,76 +18,155 @@ use Piwik\Plugin;
 use Piwik\Log;
 
 
-/**
- * Disable Tracking plugin.
- */
-class DisableTracking extends Plugin
-{
-    /**
-     * Database table name.
-     */
-    const TABLE_DISABLE_TRACKING_MAP = 'disable_site_tracking';
+class DisableTracking extends
+    Plugin {
+
+
+    const TABLEDISABLETRACKINGMAP = 'disable_site_tracking';
+
 
     /**
-     * Get the list of websites with their current archiving status.
-     *
-     * @throws \Exception if an error occurred
-     *
-     * @return array the information for each tracked site if it is disabled or not
+     * @return array The information for each tracked site if it is disabled or not.
+     * @throws \Exception
      */
-    public static function getSitesStates()
-    {
-        $sites = Request::processRequest('SitesManager.getAllSites');
+    public static function getSitesStates() {
+        $ret = array();
 
-        foreach ($sites as $site) {
-            $ret[] = [
-                'id' => $site['idsite'],
-                'label' => $site['name'],
-                'url' => $site['main_url'],
-                'disabled' => self::isSiteTrackingDisabled($site['idsite']),
-            ];
+        $sql = '
+            SELECT
+            `idsite` as `id`,
+            `name`,
+            `main_url`
+            FROM
+            `' . Common::prefixTable('site') . '`
+            ORDER BY
+            `name` ASC
+        ';
+
+        $rows = Db::query($sql);
+
+        while (($row = $rows->fetch()) !== FALSE) {
+            $ret[] = array(
+                'id'       => $row['id'],
+                'label'    => $row['name'],
+                'url'      => $row['main_url'],
+                'disabled' => FALSE,
+            );
         }
 
-        return isset($ret) ? $ret : [];
+        // Get disabled states seperately to not destroy our db query resultset.
+        for ($i = 0; $i < count($ret); $i++) {
+            $ret[$i]['disabled'] = self::isSiteTrackingDisabled($ret[$i]['id']);
+        }
+
+        return $ret;
     }
+
+
+    /**
+     * Enables tracking for all sites except the given siteIds.
+     *
+     * @param array $siteIds The sites to exclude from process.
+     *
+     * @throws \Exception
+     */
+    public static function setDisabledSiteTracking($siteIds = array()) {
+        $allExistingIds = [];
+        $cache = Cache::getEagerCache();
+
+        // Get all site ids in our "disabled tracking map"
+        $sql = '
+            SELECT
+            `siteId` as `id`
+            FROM
+            `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
+        ';
+        $rows = Db::query($sql);
+        while (($row = $rows->fetch()) !== FALSE) {
+            $allExistingIds[] = $row['id'];
+        }
+
+        // Remove ids, which shouldn't be disabled any longer
+        $idsToDelete = array_diff(
+            $allExistingIds,
+            $siteIds
+        );
+        $sql = '
+            DELETE FROM
+                `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
+            WHERE
+                siteId in (?)
+        ';
+        Db::query(
+            $sql,
+            [
+                join(
+                    ",",
+                    $idsToDelete
+                ),
+            ]
+        );
+
+        foreach ($idsToDelete as $siteId) {
+            $cache->delete('DisableTracking_' . $siteId);
+        }
+
+        // Remove ids, which now should be disabled
+        $idsToAdd = array_diff(
+            $siteIds,
+            $allExistingIds
+        );
+        $sql = '
+                INSERT INTO `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
+                    (siteId, created_at)
+                VALUES
+                    (?, NOW())
+            ';
+        foreach ($idsToAdd as $siteId) {
+            Db::query(
+                $sql,
+                $siteId
+            );
+
+            $cache->delete('DisableTracking_' . $siteId);
+        }
+    }
+
 
     /**
      * Register the events to listen on in this plugin.
      *
      * @return array the array of events and related listener
      */
-    public function registerEvents()
-    {
-        return [
-            'Tracker.isExcludedVisit' => 'isExcludedVisit',
-        ];
+    public function registerEvents() {
+        return array(
+            'Tracker.initRequestSet' => 'newTrackingRequest',
+        );
     }
+
 
     /**
      * Event-Handler for a new tracking request.
-     *
-     * @throws \Exception if an error occurred
      */
-    public function isExcludedVisit(&$excluded, $request)
-    {
-        $siteId = $request->getIdSite();
+    public function newTrackingRequest() {
+        if (isset($_GET['idsite']) === TRUE) {
+            $siteId = intval($_GET['idsite']);
 
-        if (self::isSiteTrackingDisabled($siteId)) {
-            $excluded = true;
+            if ($this->isSiteTrackingDisabled($siteId) === TRUE) {
+                // End tracking here, as of tracking for this page should be disabled, admin sais.
+                die();
+            }
         }
     }
+
 
     /**
      * Check if site tracking is disabled.
      *
-     * @param int $siteId the site id to check
-     *
-     * @throws \Exception if an error occurred
-     *
-     * @return bool 'true' if tracking is disabled, 'false' otherwise
+     * @return bool Whether new tracking requests are ok or not.
+     * @throws \Exception
      */
-    public static function isSiteTrackingDisabled($siteId)
-    {
+    public static function isSiteTrackingDisabled($siteId) {
         $cache = Cache::getEagerCache();
 
         if ($cache->contains('DisableTracking_' . $siteId)) {
@@ -95,70 +174,86 @@ class DisableTracking extends Plugin
         } else {
             $sql = '
                 SELECT
-                  count(*) AS `disabled`
-                FROM ' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '
+                    count(*) AS `disabled`
+                FROM `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
                 WHERE
                     siteId = ? AND
                     deleted_at IS NULL;
             ';
-            try {
-                $state = Db::fetchAll($sql, [$siteId]);
-            } catch (\Exception $ex) {
-                Log::error($ex->getMessage());
-                
-            }
-            $isSiteTrackingDisabled = (bool) $state[0]['disabled'];
+
+            $state = Db::fetchAll(
+                $sql,
+                $siteId
+            );
+
+            $isSiteTrackingDisabled = boolval($state[0]['disabled']);
             $cache->save('DisableTracking_' . $siteId, $isSiteTrackingDisabled);
 
             return $isSiteTrackingDisabled;
         }
     }
 
+
     /**
      * Generate table to store disable states while install plugin.
      *
      * @throws \Exception if an error occurred
      */
-    public function install()
-    {
-        $sql = 'CREATE TABLE IF NOT EXISTS ' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . ' (
-                        id INT NOT NULL AUTO_INCREMENT,
-                        siteId INT NOT NULL,
-                        created_at DATETIME NOT NULL,
-                        deleted_at DATETIME,
-                        PRIMARY KEY (id)
-                    )  DEFAULT CHARSET=utf8';
-        Db::exec($sql);
+    public function install() {
+        try {
+            $sql = 'CREATE TABLE `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '` (
+                    id INT NOT NULL AUTO_INCREMENT,
+                    siteId INT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    deleted_at DATETIME,
+                    PRIMARY KEY (id)
+                )  DEFAULT CHARSET=utf8';
+            Db::exec($sql);
+        } catch (Exception $e) {
+            // ignore error if table already exists (1050 code is for 'table already exists')
+            if (Db::get()
+                    ->isErrNo(
+                        $e,
+                        '1050'
+                    ) === FALSE) {
+                throw $e;
+            }
+        }
     }
+
 
     /**
      * Remove plugins table, while uninstall the plugin.
      */
-    public function uninstall()
-    {
-        Db::dropTables(Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP));
+    public function uninstall() {
+        Db::dropTables(Common::prefixTable(self::TABLEDISABLETRACKINGMAP));
     }
+
 
     /**
      * Save new input.
-     *
-     * @throws \Exception if an error occurred
      */
-    public static function save()
-    {
+    public static function save() {
+        $disabled = array();
+
         foreach ($_POST as $key => $state) {
-            $key = Common::sanitizeInputValue($key);
-            if (false !== strpos($key, '-')) {
-                $id = explode('-', $key);
+            if (strpos(
+                    $key,
+                    '-'
+                ) !== FALSE) {
+                $id = preg_split(
+                    "/-/",
+                    $key
+                );
                 $id = $id[1];
-                if ('on' === Common::sanitizeInputValue($state)) {
-                    self::disableSiteTracking($id);
+
+                if ($state === 'on') {
                     $disabled[] = $id;
                 }
             }
         }
 
-        self::enableAllSiteTrackingExcept(isset($disabled) ? $disabled : []);
+        self::setDisabledSiteTracking($disabled);
     }
 
     /**
@@ -173,27 +268,11 @@ class DisableTracking extends Plugin
     {
         Piwik::checkUserHasAdminAccess($idSites);
 
-        if (!self::sitesExist($idSites)) {
-            throw new \Exception('Check given site ids');
-        }
-        foreach ($idSites as $key => $idSite) {
+        foreach ($idSites as $idSite) {
             if ('on' === $disabled) {
-                if (!self::isSiteTrackingDisabled($idSite)) {
-                    self::disableSiteTracking($idSite);
-                }
+                self::disableSiteTracking($idSite);
             } else {
-                $sql = 'UPDATE `' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '`
-                        SET
-                            `deleted_at`= NOW()
-                        WHERE 
-                            `deleted_at` IS NULL
-                            AND
-                            `siteId` = ?';
-                try {
-                    Db::query($sql, [$idSite]);
-                } catch (\Exception $ex) {
-                    Log::error($ex->getMessage()); 
-                }                           
+                self::enableSiteTracking($idSite);
             }
 
             $cache = Cache::getEagerCache();
@@ -204,82 +283,48 @@ class DisableTracking extends Plugin
     /**
      * Disables tracking for the given site.
      *
-     * @param int $id the site do enable tracking for
+     * @param int $siteId the site to disable tracking for
      *
-     * @throws \Exception if an error occurred
+     * @throws Exception if an error occurred
      */
-    private static function disableSiteTracking($id)
+    protected static function disableSiteTracking($siteId)
     {
-        if (empty(Request::processRequest('SitesManager.getSiteFromId', ['idSite' => $id]))) {
-            throw new \Exception('Invalid site ID');
+        if (empty(Request::processRequest('SitesManager.getSiteFromId', ['idSite' => $siteId]))) {
+            throw new Exception('Invalid site ID');
         }
 
-        if (!self::isSiteTrackingDisabled($id)) {
+        if (!self::isSiteTrackingDisabled($siteId)) {
             $sql = '
-                    INSERT INTO `' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '`
-                        (siteId, created_at)
-                    VALUES
-                        (?, NOW())
-                ';
-            try {
-                Db::query($sql, [$id]);
-            } catch (\Exception $ex) {
-                Log::error($ex->getMessage());                
-            }            
-        }
-    }
-
-    /**
-     * Enables tracking for all sites except the given siteIds.
-     *
-     * @param array $siteIds the sites to exclude from process
-     *
-     * @throws \Exception if an error occurred
-     */
-    private static function enableAllSiteTrackingExcept($siteIds)
-    {
-        $sql = '
-                UPDATE
-                    `' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP) . '`
-                SET
-                    `deleted_at`= NOW()
-                WHERE 
-                    `deleted_at` IS NULL
+                INSERT INTO `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
+                    (siteId, created_at)
+                VALUES
+                    (?, NOW())
             ';
-        if (0 !== count($siteIds)) {
-            $sql .= ' AND `siteId` NOT IN (?)';
-        }
-        Db::query(
-            $sql,
-            implode(',', $siteIds)
-        );
-
-        $sql = '
-                SELECT
-                    siteId
-                FROM ' . Common::prefixTable(self::TABLE_DISABLE_TRACKING_MAP);
-        $idSites = Db::fetchAll($sql);
-
-        foreach ($idSites as $idSite) {
-            $cache = Cache::getEagerCache();
-            $cache->delete('DisableTracking_' . $idSite['siteId']);
+            Db::query($sql, $siteId);
         }
     }
 
     /**
-     * Checks the given site IDs exists.
+     * Enables tracking for the given site.
      *
-     * @param array $ids the website ids list
+     * @param int $siteId the site to enable tracking for
      *
-     * @return bool true if all the IDs exists, false otherwise
+     * @throws Exception if an error occurred
      */
-    private static function sitesExist($ids)
+    protected static function enableSiteTracking($siteId)
     {
-        $sites = Request::processRequest('SitesManager.getSitesIdWithAdminAccess');
-        if (empty($sites)) {
-            return false;
+        if (empty(Request::processRequest('SitesManager.getSiteFromId', ['idSite' => $siteId]))) {
+            throw new Exception('Invalid site ID');
         }
 
-        return empty(array_diff($ids, $sites));
+        if (self::isSiteTrackingDisabled($siteId)) {
+            $sql = '
+                DELETE FROM
+                    `' . Common::prefixTable(self::TABLEDISABLETRACKINGMAP) . '`
+                WHERE
+                    `siteId` = ?
+            ';
+            Db::query($sql, $siteId);
+        }
     }
 }
